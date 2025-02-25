@@ -1,13 +1,10 @@
-import requests
 import os
+import requests
 
-# Option 1: Read from environment variable
-ALPHAVANTAGE_API_KEY = "0U4RNH16FUMQZEIR"
-
-# Option 2: Directly import from a credentials file if you have a plain text file.
-# For example, if credentials/api_key.txt contains only your API key:
-# with open(os.path.join("..", "credentials", "api_key.txt"), "r") as f:
-#     ALPHAVANTAGE_API_KEY = f.read().strip()
+ALPHAVANTAGE_API_KEY = os.environ.get("ALPHAVANTAGE_API_KEY")
+if not ALPHAVANTAGE_API_KEY:
+    # Fallback if needed or raise an error.
+    raise ValueError("The environment variable ALPHAVANTAGE_API_KEY is not set.")
 
 BASE_URL = "https://www.alphavantage.co/query"
 
@@ -20,10 +17,3 @@ def get_daily_time_series(symbol: str):
     response = requests.get(BASE_URL, params=params)
     response.raise_for_status()
     return response.json()
-
-if __name__ == "__main__":
-    # Test the module; run "python alpha_api.py" to see sample output.
-    symbol = "AAPL"
-    data = get_daily_time_series(symbol)
-    print(f"Data for {symbol}:")
-    print(data)
