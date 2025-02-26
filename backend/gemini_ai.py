@@ -11,8 +11,8 @@ genai.configure(api_key=GOOGLE_API_KEY)
 
 def generate_stock_explanation(stock_data):
     # Initialize the Gemini model
-    model = genai.GenerativeModel('gemini-pro')
-    
+    model = genai.GenerativeModel('gemini-2.0-pro-exp-02-05')
+
     # Create a prompt for the model
     prompt = f"""
     Please analyze the following stock data and provide a clear explanation:
