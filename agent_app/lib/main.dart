@@ -1,6 +1,9 @@
+import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_markdown/flutter_markdown.dart';
 import 'dart:convert';
 import 'package:http/http.dart' as http;
+import 'package:intl/intl.dart';
 
 const _baseCloudUrl = 'https://finapp-backend-510358572253.us-central1.run.app';
 
@@ -106,7 +109,7 @@ class _StockChatScreenState extends State<StockChatScreen> {
           isCustomWidget: false,
         ));
       });
-      _scrollToBottom();
+      // _scrollToBottom();
     }
   }
 
@@ -132,6 +135,16 @@ class _StockChatScreenState extends State<StockChatScreen> {
           ),
         ));
       } else if (response['type'] == 'stock_analysis') {
+        // Convert the data to a JSON string if it's not already a string
+        String stockDataStr;
+        if (response['data'] is String) {
+          stockDataStr = response['data'];
+        } else if (response['data'] != null) {
+          stockDataStr = jsonEncode(response['data']);
+        } else {
+          stockDataStr = '';
+        }
+
         _messages.add(ChatMessage(
           content: response['explanation'],
           isUser: false,
@@ -139,12 +152,13 @@ class _StockChatScreenState extends State<StockChatScreen> {
           customWidget: StockAnalysisWidget(
             symbol: response['symbol'],
             explanation: response['explanation'],
+            stockData: stockDataStr,
           ),
         ));
       }
     });
 
-    _scrollToBottom();
+    // _scrollToBottom();
   }
 
   void _scrollToBottom() {
@@ -192,8 +206,8 @@ class _StockChatScreenState extends State<StockChatScreen> {
       child: Container(
         margin: EdgeInsets.only(
           bottom: 10.0,
-          left: message.isUser ? 80.0 : 0.0,
-          right: message.isUser ? 0.0 : 80.0,
+          left: message.isUser ? 25.0 : 0.0,
+          right: message.isUser ? 0.0 : 25.0,
         ),
         padding: const EdgeInsets.all(12.0),
         decoration: BoxDecoration(
@@ -230,8 +244,10 @@ class _StockChatScreenState extends State<StockChatScreen> {
               decoration: const InputDecoration(
                 hintText: 'Type your message here...',
                 border: OutlineInputBorder(),
-                contentPadding:
-                    EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                contentPadding: EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 12,
+                ),
               ),
               onSubmitted: (text) {
                 if (text.isNotEmpty) {
@@ -322,15 +338,97 @@ class CompanyOptionsWidget extends StatelessWidget {
   }
 }
 
-class StockAnalysisWidget extends StatelessWidget {
+class StockAnalysisWidget extends StatefulWidget {
   final String symbol;
   final String explanation;
+  final String? stockData;
 
   const StockAnalysisWidget({
     super.key,
     required this.symbol,
     required this.explanation,
+    required this.stockData,
   });
+
+  @override
+  State<StockAnalysisWidget> createState() => _StockAnalysisWidgetState();
+}
+
+class _StockAnalysisWidgetState extends State<StockAnalysisWidget> {
+  List<FlSpot> _priceSpots = [];
+  double _minY = 0;
+  double _maxY = 0;
+  List<String> _dates = [];
+  bool _isLoading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _parseStockData();
+  }
+
+  void _parseStockData() {
+    if (widget.stockData == null || widget.stockData!.isEmpty) {
+      setState(() {
+        _isLoading = false;
+      });
+      return;
+    }
+
+    try {
+      // Parse the JSON string
+      final Map<String, dynamic> data = jsonDecode(widget.stockData!);
+
+      // Extract the time series data
+      final Map<String, dynamic> timeSeries = data['Time Series (Daily)'] ?? {};
+
+      // Sort dates in ascending order
+      final List<String> sortedDates = timeSeries.keys.toList()
+        ..sort((a, b) => DateTime.parse(a).compareTo(DateTime.parse(b)));
+
+      _dates = sortedDates;
+
+      // Create data points for the chart
+      List<FlSpot> spots = [];
+      double minPrice = double.infinity;
+      double maxPrice = -double.infinity;
+
+      for (int i = 0; i < sortedDates.length; i++) {
+        final date = sortedDates[i];
+        final dayData = timeSeries[date];
+
+        // Handle the specific format from your sample data
+        final closePrice = double.parse(dayData['4. close'] ??
+            dayData['close'] ??
+            dayData['4. close:'] ??
+            dayData['close:'] ??
+            // Try to match the format in your sample
+            (dayData.containsKey('4. close') ? dayData['4. close'] : null) ??
+            (dayData.containsKey('close') ? dayData['close'] : null) ??
+            '0');
+
+        spots.add(FlSpot(i.toDouble(), closePrice));
+
+        if (closePrice < minPrice) minPrice = closePrice;
+        if (closePrice > maxPrice) maxPrice = closePrice;
+      }
+
+      // Add some padding to min and max for better visualization
+      final padding = (maxPrice - minPrice) * 0.1;
+
+      setState(() {
+        _priceSpots = spots;
+        _minY = minPrice - padding;
+        _maxY = maxPrice + padding;
+        _isLoading = false;
+      });
+    } catch (e) {
+      debugPrint('Error parsing stock data: $e');
+      setState(() {
+        _isLoading = false;
+      });
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -338,25 +436,161 @@ class StockAnalysisWidget extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
-          '$symbol Analysis',
+          '${widget.symbol} Analysis',
           style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
         ),
         const SizedBox(height: 8),
-        Text(explanation),
-        const SizedBox(height: 12),
         Container(
-          height: 180,
+          height: 250,
           width: double.infinity,
           decoration: BoxDecoration(
             color: Colors.grey.shade100,
             border: Border.all(color: Colors.grey.shade300),
             borderRadius: BorderRadius.circular(4),
           ),
-          child: const Center(
-            child: Text('Stock chart visualization would go here'),
+          padding: const EdgeInsets.all(16),
+          child: _isLoading
+              ? const Center(child: CircularProgressIndicator())
+              : _priceSpots.isEmpty
+                  ? const Center(child: Text('No stock data available'))
+                  : _buildStockChart(),
+        ),
+        const SizedBox(height: 12),
+        MarkdownBody(data: widget.explanation),
+      ],
+    );
+  }
+
+  Widget _buildStockChart() {
+    return LineChart(
+      LineChartData(
+        gridData: FlGridData(
+          show: true,
+          drawVerticalLine: true,
+          horizontalInterval: 1,
+          verticalInterval: 1,
+          getDrawingHorizontalLine: (value) {
+            return FlLine(
+              color: Colors.grey.shade300,
+              strokeWidth: 1,
+            );
+          },
+          getDrawingVerticalLine: (value) {
+            return FlLine(
+              color: Colors.grey.shade300,
+              strokeWidth: 1,
+            );
+          },
+        ),
+        titlesData: FlTitlesData(
+          show: true,
+          rightTitles: AxisTitles(
+            sideTitles: SideTitles(showTitles: false),
+          ),
+          topTitles: AxisTitles(
+            sideTitles: SideTitles(showTitles: false),
+          ),
+          bottomTitles: AxisTitles(
+            sideTitles: SideTitles(
+              showTitles: true,
+              reservedSize: 30,
+              interval: _dates.length > 10
+                  ? (_dates.length / 5).floor().toDouble()
+                  : 1,
+              getTitlesWidget: (value, meta) {
+                if (value.toInt() >= 0 && value.toInt() < _dates.length) {
+                  final date = DateTime.parse(_dates[value.toInt()]);
+                  return Padding(
+                    padding: const EdgeInsets.only(top: 8.0),
+                    child: Text(
+                      DateFormat('MM/dd').format(date),
+                      style: const TextStyle(
+                        color: Colors.black54,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 10,
+                      ),
+                    ),
+                  );
+                }
+                return const SizedBox();
+              },
+            ),
+          ),
+          leftTitles: AxisTitles(
+            sideTitles: SideTitles(
+              showTitles: true,
+              interval: ((_maxY - _minY) / 5).roundToDouble(),
+              getTitlesWidget: (value, meta) {
+                return Text(
+                  '\$${value.toStringAsFixed(2)}',
+                  style: const TextStyle(
+                    color: Colors.black54,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 10,
+                  ),
+                );
+              },
+              reservedSize: 42,
+            ),
           ),
         ),
-      ],
+        borderData: FlBorderData(
+          show: true,
+          border: Border.all(color: Colors.grey.shade400),
+        ),
+        minX: 0,
+        maxX: (_priceSpots.length - 1).toDouble(),
+        minY: _minY,
+        maxY: _maxY,
+        lineBarsData: [
+          LineChartBarData(
+            spots: _priceSpots,
+            isCurved: true,
+            color: Colors.green,
+            barWidth: 3,
+            isStrokeCapRound: true,
+            dotData: FlDotData(
+              // Only show dots if we have few data points
+              show: _priceSpots.length < 15,
+            ),
+            belowBarData: BarAreaData(
+              show: true,
+              color: Colors.green.withValues(alpha: 0.2),
+            ),
+          ),
+        ],
+        lineTouchData: LineTouchData(
+          touchTooltipData: LineTouchTooltipData(
+            // tooltipBgColor: Colors.blueAccent.withOpacity(0.8),
+            getTooltipItems: (List<LineBarSpot> touchedBarSpots) {
+              return touchedBarSpots.map((barSpot) {
+                final index = barSpot.x.toInt();
+                if (index >= 0 && index < _dates.length) {
+                  final date = DateTime.parse(_dates[index]);
+                  final formattedDate = DateFormat('yyyy-MM-dd').format(date);
+                  return LineTooltipItem(
+                    '$formattedDate\n',
+                    const TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.bold,
+                    ),
+                    children: [
+                      TextSpan(
+                        text: '\$${barSpot.y.toStringAsFixed(2)}',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.normal,
+                        ),
+                      ),
+                    ],
+                  );
+                }
+                return null;
+              }).toList();
+            },
+          ),
+        ),
+      ),
     );
   }
 }
