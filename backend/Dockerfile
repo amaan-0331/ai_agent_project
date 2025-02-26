@@ -10,6 +10,9 @@ COPY . /app
 # Install any needed packages specified in requirements.txt.
 RUN pip install --upgrade pip && pip install -r requirements.txt
 
+# Download spaCy model
+RUN python -m spacy download en_core_web_sm
+
 # Expose port 8080 to the outside world.
 EXPOSE 8080
 
