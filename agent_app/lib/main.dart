@@ -1,3 +1,4 @@
+import 'package:agent_app/loading_indicator.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
@@ -39,6 +40,7 @@ class _StockChatScreenState extends State<StockChatScreen> {
   final ScrollController _scrollController = ScrollController();
   final List<ChatMessage> _messages = [];
   String? sessionId;
+  bool _isLoading = false;
 
   @override
   void initState() {
@@ -83,6 +85,7 @@ class _StockChatScreenState extends State<StockChatScreen> {
         isCustomWidget: false,
       ));
       _messageController.clear();
+      _isLoading = true;
     });
 
     // Scroll to bottom after adding message
@@ -98,11 +101,14 @@ class _StockChatScreenState extends State<StockChatScreen> {
         }),
       );
 
+      setState(() => _isLoading = false);
+
       final data = jsonDecode(response.body);
       _handleResponse(data);
     } catch (error) {
       debugPrint('Error sending message: $error');
       setState(() {
+        _isLoading = false;
         _messages.add(ChatMessage(
           content: 'Sorry, there was an error processing your request.',
           isUser: false,
@@ -186,8 +192,28 @@ class _StockChatScreenState extends State<StockChatScreen> {
               child: ListView.builder(
                 controller: _scrollController,
                 padding: const EdgeInsets.all(16.0),
-                itemCount: _messages.length,
+                itemCount: _messages.length + (_isLoading ? 1 : 0),
                 itemBuilder: (context, index) {
+                  if (index == _messages.length && _isLoading) {
+                    return Align(
+                      alignment: Alignment.centerLeft,
+                      child: Container(
+                        margin: const EdgeInsets.only(
+                          bottom: 10.0,
+                          right: 80.0,
+                        ),
+                        padding: const EdgeInsets.all(16.0),
+                        decoration: BoxDecoration(
+                          color: Colors.grey.shade200,
+                          borderRadius: BorderRadius.circular(8.0),
+                        ),
+                        child: CustomLoadingAnimation(
+                          size: 125,
+                          loadingText: "Loading...",
+                        ),
+                      ),
+                    );
+                  }
                   final message = _messages[index];
                   return _buildMessageWidget(message);
                 },
